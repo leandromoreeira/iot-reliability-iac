@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Root subscriber infrastruture
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    -
+      Label:
+        default: "CloudFormation Definition"
+      Parameters:
+        - BucketSourceName
+    -
+      Label:
+        default: "Network Configuration"
+      Parameters:
+        - AvailabilityZone
+        - CIDR
+        - PrivateSubnetes
+    -
+      Label:
+        default: "Environment Definition"
+      Parameters:
+        - Environment
+        - EC2KeyPair
+        - Scenario
+
+Parameters:
+
+  AvailabilityZone:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: Select 3 AZ minimum
+
+  CIDR:
+    Type: String
+    Description: VPC CIDR Block (eg 10.0.0.0/16)
+    Default: 10.0.0.0/16
+
+  BucketSourceName:
+    Type: String
+    Description: Bucket with Insfastructure as Code
+    Default: iot-reliability-iac
+
+  Environment:
+    Type: String
+    Description: Infrastructure based name
+    Default: prod-iot
+
+  EC2KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Keypair needed to access the ec2 instances
+
+  PrivateSubnetes:
+    Type: String
+    Description: Do you want to create private subnetes with NAT Gateways? (May cost apply)
+    AllowedValues:
+      - Yes
+      - No
+    Default: Yes
+
+  Scenario:
+    Type: String
+    Description: Chose each scenario do you want do build
+    AllowedValues:
+      - Publisher
+      - Subscriber
+    ConstraintDescription: You must specify one option
+
+Conditions:
+
+  Private: !Equals [!Ref PrivateSubnetes, 'Yes']
+
+  Publisher: !Equals [!Ref Scenario, 'Publisher']
+
+  Subscriber: !Equals [!Ref Scenario, 'Subscriber']
+
+Resources:
+
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AZ1: !Select [0, !Ref AvailabilityZone]
+        AZ2: !Select [1, !Ref AvailabilityZone]
+        AZ3: !Select [2, !Ref AvailabilityZone]
+        CIDR: !Ref CIDR
+        Environment: !Ref Environment
+        PrivateSubnetes: !Ref PrivateSubnetes
+      TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/network.yaml
+
+  PublisherAutoScaling:
+    Condition: Publisher
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        Environment: !Sub ${Environment}-publisher
+        Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
+        Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
+        Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+        EC2KeyPair: !Ref EC2KeyPair
+        PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
+        AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+      TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/publisher.yaml
+
+
+# Outputs:
+
+

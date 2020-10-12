@@ -1,0 +1,116 @@
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template responsable for creating publisher resources
+
+Parameters:
+
+  Environment:
+    Type: String
+  Subnet1:
+    Type: String
+  Subnet2:
+    Type: String
+  Subnet3:
+    Type: String
+  EC2KeyPair:
+    Type: String
+  PubPrivateVPC:
+    Type: String
+  AMIId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+
+Resources:
+
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      IamInstanceProfile: !GetAtt [InstanceProfile,Arn]
+      InstanceMonitoring: false
+      ImageId: !Ref AMIId
+      InstanceType: t3a.nano
+      KeyName: !Ref EC2KeyPair
+      LaunchConfigurationName: !Sub ${Environment}-lc-up2
+      SecurityGroups:
+        - !Ref SecurityGroup
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -ex
+            amazon-linux-extras install python3.8 -y
+            yum install git -y
+            git clone https://github.com/leandromoreeira/mqtt-publisher.git /home/ec2-user/mqtt-publisher
+            pip3.8 install -r /home/ec2-user/mqtt-publisher/requirements.txt
+            python3.8 /home/ec2-user/mqtt-publisher/index.py
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: EC2AssociateAddress
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+      RoleName: !Sub ${Environment}
+
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Sub ${Environment}
+      Path: /
+      Roles:
+        - !Ref Role
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${Environment}
+      GroupDescription: !Sub ${Environment}
+      VpcId: !Ref PubPrivateVPC
+      SecurityGroupIngress:
+        -
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 300
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      DesiredCapacity: 1
+      MinSize: 1
+      MaxSize: 1
+      VPCZoneIdentifier:
+        - !Ref Subnet1
+        - !Ref Subnet2
+        - !Ref Subnet3
+      Cooldown: 300
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-instance
+          PropagateAtLaunch: true
+      AutoScalingGroupName: !Sub ${Environment}-asg
+
+Outputs:
+
+  SecurityGroup:
+    Description: Security Group
+    Value: !Ref SecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-SecurityGroup

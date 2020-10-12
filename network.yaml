@@ -1,0 +1,408 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Responsable for create network resources
+
+Parameters:
+
+  AZ1:
+    Description: Select the first Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+
+  AZ2:
+    Description: Select the second Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+
+  AZ3:
+    Description: Select the third Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+
+  Environment:
+    Description: Infrastrucuture based name
+    Type: String
+
+  CIDR:
+    Description: VPC CIDR Block (eg 10.0.0.0/16)
+    Type: String
+
+  PrivateSubnetes:
+    Type: String
+    Description: Do you want to create private subnetes with NAT Gateways? (May cost apply)
+    AllowedValues:
+      - Yes
+      - No
+    Default: Yes
+
+Conditions:
+
+  Private: !Equals [!Ref PrivateSubnetes, 'Yes']
+
+Resources:
+
+  PubPrivateVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref CIDR
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-vpc
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Ref AZ1
+      CidrBlock: !Select [ 0,!Cidr [ !Ref CIDR, 6, 8 ]]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub public-1-${Environment}
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Ref AZ2
+      CidrBlock: !Select [ 1,!Cidr [ !Ref CIDR, 6, 8 ]]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub public-2-${Environment}
+
+  PublicSubnet3:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Ref AZ3
+      CidrBlock: !Select [ 2,!Cidr [ !Ref CIDR, 6, 8 ]]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub public-3-${Environment}
+
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: !Sub public-${Environment}
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}
+
+  GatewayToInternet:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: GatewayToInternet
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet3RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet3
+      RouteTableId: !Ref PublicRouteTable
+
+# Private Subnet 1
+  PrivateSubnet1:
+    Condition: Private
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Ref AZ1
+      CidrBlock: !Select [ 1,!Cidr [ !Ref CIDR, 4, 10 ]]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub private-1-${Environment}
+
+  PrivateRouteTable1:
+    Condition: Private
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+      - Key: Name
+        Value: !Sub private-1-${Environment}
+
+  PrivateSubnet1RouteTableAssociation:
+    Condition: Private
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  NatPublicIP1:
+    Condition: Private
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Condition: Private
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !GetAtt [NatPublicIP1,AllocationId]
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-nat-1
+
+  PrivateRouteNat1:
+    Condition: Private
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  S3Endpoint1:
+    Condition: Private
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref PubPrivateVPC
+
+  DynamoDbEndpoint1:
+    Condition: Private
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcId: !Ref PubPrivateVPC
+
+# Private Subnet 2
+  PrivateSubnet2:
+    Condition: Private
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Ref AZ2
+      CidrBlock: !Select [ 2,!Cidr [ !Ref CIDR, 4, 10 ]]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub private-2-${Environment}
+
+  PrivateRouteTable2:
+    Condition: Private
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+      - Key: Name
+        Value: !Sub private-2-${Environment}
+
+  PrivateSubnet2RouteTableAssociation:
+    Condition: Private
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  NatPublicIP2:
+    Condition: Private
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+
+  NatGateway2:
+    Condition: Private
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !GetAtt [NatPublicIP2,AllocationId]
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-nat-2
+
+  PrivateRouteNat2:
+    Condition: Private
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  S3Endpoint2:
+    Condition: Private
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTable2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref PubPrivateVPC
+
+  DynamoDbEndpoint2:
+    Condition: Private
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTable2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcId: !Ref PubPrivateVPC
+
+# Private Subnet 3
+
+  PrivateSubnet3:
+    Condition: Private
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      AvailabilityZone: !Ref AZ3
+      CidrBlock: !Select [ 3,!Cidr [ !Ref CIDR, 4, 10 ]]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub private-3-${Environment}
+
+  PrivateRouteTable3:
+    Condition: Private
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+      - Key: Name
+        Value: !Sub private-3-${Environment}
+
+  PrivateSubnet3RouteTableAssociation:
+    Condition: Private
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable3
+
+  NatPublicIP3:
+    Condition: Private
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+
+  NatGateway3:
+    Condition: Private
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !GetAtt [NatPublicIP3,AllocationId]
+      SubnetId: !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-nat-3
+
+  PrivateRouteNat3:
+    Condition: Private
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway3
+
+  S3Endpoint3:
+    Condition: Private
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTable3
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref PubPrivateVPC
+
+  DynamoDbEndpoint3:
+    Condition: Private
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref PrivateRouteTable3
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcId: !Ref PubPrivateVPC
+
+Outputs:
+  PubPrivateVPC:
+    Description: VPC id
+    Value: !Ref PubPrivateVPC
+    Export:
+      Name: !Sub "${AWS::StackName}-PubPrivateVPC"
+
+  PublicSubnet1:
+    Description: Public Subnet 1 Id
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet1"
+
+  PublicSubnet2:
+    Description: Public Subnet 2 Id
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet2"
+
+  PublicSubnet3:
+    Description: Public Subnet 3 Id
+    Value: !Ref PublicSubnet3
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet3"
+
+  PrivateSubnet1:
+    Condition: Private
+    Description: Private Subnet 1 Id
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnet1
+
+  PrivateSubnet2:
+    Condition: Private
+    Description: Private Subnet 2 Id
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnet2
+
+  PrivateSubnet3:
+    Condition: Private
+    Description: Private Subnet 3 Id
+    Value: !Ref PrivateSubnet3
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnet3
+
+  NatPublicIP1:
+    Condition: Private
+    Description: Nat 1 Address
+    Value: !Ref NatPublicIP1
+    Export:
+      Name: !Sub ${AWS::StackName}-NatPublicIP1
+
+  NatPublicIP2:
+    Condition: Private
+    Description: Nat 2 Address
+    Value: !Ref NatPublicIP2
+    Export:
+      Name: !Sub ${AWS::StackName}-NatPublicIP2
+
+  NatPublicIP3:
+    Condition: Private
+    Description: Nat 3 Address
+    Value: !Ref NatPublicIP3
+    Export:
+      Name: !Sub ${AWS::StackName}-NatPublicIP3
