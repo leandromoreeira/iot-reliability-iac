@@ -120,6 +120,7 @@ Resources:
         EC2KeyPair: !Ref EC2KeyPair
         PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
         AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+        BrokerDomain: !Sub broker.${Domain}
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/publisher.yaml
 
   # SubscriberAutoScaling:

@@ -267,7 +267,7 @@ Resources:
       AutoScalingReplacingUpdate:
         WillReplace: 'true'
     Properties:
-      HealthCheckType: EC2
+      HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       LaunchConfigurationName: !Ref LaunchConfiguration
       TargetGroupARNs:
