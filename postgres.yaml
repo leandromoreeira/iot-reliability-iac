@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template responsable for creating the postgres database
+Parameters:
+
+  Environment:
+    Type: String
+
+  Subnet1:
+    Type: String
+
+  Subnet2:
+    Type: String
+
+  Subnet3:
+    Type: String
+
+  PubPrivateVPC:
+    Type: String
+
+  DatabaseName:
+    Type: String
+
+  DatabaseUser:
+    Type: String
+
+  PrivateSubnetes:
+    Type: String
+    Description: Do you want to create private subnetes with NAT Gateways? (May cost apply)
+    AllowedValues:
+      - Yes
+      - No
+    Default: Yes
+
+Conditions:
+
+  Private: !Equals [!Ref PrivateSubnetes, 'Yes']
+
+Resources:
+
+  PrivateDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group used by Postgres
+      SubnetIds:
+        - !Ref Subnet1
+        - !Ref Subnet2
+        - !Ref Subnet3
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}
+
+  PostgreSQLSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${Environment}-sg
+      GroupDescription: !Sub ${Environment}-sg
+      VpcId: !Ref PubPrivateVPC
+
+  PostgreSQLDBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
+      BackupRetentionPeriod: 0
+      DeleteAutomatedBackups: true
+      DeletionProtection: false
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      DBInstanceIdentifier: !Sub ${Environment}
+      DBName: !Ref DatabaseName
+      VPCSecurityGroups:
+        - !Ref PostgreSQLSecurityGroup
+      DBSubnetGroupName: !Ref PrivateDBSubnetGroup
+      Engine: postgres
+      EngineVersion: 12.3
+      MasterUsername: !Sub '{{resolve:secretsmanager:${MyRDSInstanceSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${MyRDSInstanceSecret}:SecretString:password}}'
+      MultiAZ: false
+      PubliclyAccessible: !If [ Private, false, true ]
+      StorageType: gp2
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}
+
+  MyRDSInstanceSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: AWS RDS Postgres ABCZ Production Instance Access
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DatabaseUser}"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 20
+        ExcludePunctuation: true
+      Tags:
+        -
+          Key: Name
+          Value: !Sub ${Environment}
+
+  SecretRDSInstanceAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref MyRDSInstanceSecret
+      TargetId: !Ref PostgreSQLDBInstance
+      TargetType: AWS::RDS::DBInstance
+
+Outputs:
+
+  PostgreSQLDBInstance:
+    Description: Postgres
+    Value: !Ref PostgreSQLDBInstance
+    Export:
+      Name: !Sub "${AWS::StackName}-PostgreSQLDBInstance"
+
+  PostgreSQLDBInstanceEndpoint:
+    Description: 'Postgres Endpoint'
+    Value: !GetAtt [PostgreSQLDBInstance,Endpoint.Address]
+    Export:
+      Name: !Sub "${AWS::StackName}-PostgreSQLDBInstanceEndpoint"
+
+  PostgreSQLSecurityGroup:
+    Description: Postgres Security Group
+    Value: !Ref PostgreSQLSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-PostgreSQLSecurityGroup
+
+  RDSInstanceSecret:
+    Value: !Ref MyRDSInstanceSecret

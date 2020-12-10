@@ -15,6 +15,8 @@ Metadata:
         - AvailabilityZone
         - CIDR
         - PrivateSubnetes
+        - HostedZoneId
+        - Domain
     -
       Label:
         default: "Environment Definition"
@@ -22,6 +24,8 @@ Metadata:
         - Environment
         - EC2KeyPair
         - Scenario
+        - DatabaseName
+        - DatabaseUser
 
 Parameters:
 
@@ -64,6 +68,24 @@ Parameters:
       - Subscriber
     ConstraintDescription: You must specify one option
 
+  DatabaseName:
+    Description: Database name
+    Default: iot
+    Type: String
+
+  DatabaseUser:
+    Description: Database username
+    Default: postgres
+    Type: String
+
+  HostedZoneId:
+    Description: Informar o Hosted Zone ID do domínio no Route 53
+    Type: String
+
+  Domain:
+    Description: Informar o Domínio que será utilizado para criar os recursos
+    Type: String
+
 Conditions:
 
   Private: !Equals [!Ref PrivateSubnetes, 'Yes']
@@ -100,6 +122,50 @@ Resources:
         AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/publisher.yaml
 
+  # SubscriberAutoScaling:
+  #   Condition: Subscriber
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     Parameters:
+  #       Environment: !Sub ${Environment}-subscriber
+  #       Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
+  #       Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
+  #       Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+  #       EC2KeyPair: !Ref EC2KeyPair
+  #       PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
+  #       AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  #     TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/subscriber.yaml
+
+
+  BrokerAutoScaling:
+    Condition: Subscriber
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        Environment: !Sub ${Environment}-broker
+        Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
+        Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
+        Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+        EC2KeyPair: !Ref EC2KeyPair
+        PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
+        AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+        HostedZoneId: !Ref HostedZoneId
+        BrokerDNS: !Sub broker.${Domain}
+      TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/broker.yaml
+
+  # PostgresStack:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     Parameters:
+  #       Environment: !Ref Environment-postgres
+  #       PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
+  #       Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
+  #       Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
+  #       Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+  #       DatabaseName: !Ref DatabaseName
+  #       DatabaseUser: !Ref DatabaseUser
+  #       PrivateSubnetes: !Ref PrivateSubnetes
+  #     TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/postgres.yaml
 
 # Outputs:
 

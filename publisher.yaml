@@ -55,15 +55,15 @@ Resources:
             Action:
               - 'sts:AssumeRole'
       Path: /
-      Policies:
-        - PolicyName: EC2AssociateAddress
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 's3:*'
-                Resource: '*'
+      # Policies:
+      #   - PolicyName: EC2AssociateAddress
+      #     PolicyDocument:
+      #       Version: 2012-10-17
+      #       Statement:
+      #         - Effect: Allow
+      #           Action:
+      #             - 's3:*'
+      #           Resource: '*'
       RoleName: !Sub ${Environment}
 
   InstanceProfile:

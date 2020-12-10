@@ -1,0 +1,309 @@
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template responsable for creating publisher resources
+
+Parameters:
+
+  Environment:
+    Type: String
+  Subnet1:
+    Type: String
+  Subnet2:
+    Type: String
+  Subnet3:
+    Type: String
+  EC2KeyPair:
+    Type: String
+  PubPrivateVPC:
+    Type: String
+  AMIId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+  HostedZoneId:
+    Type: String
+  BrokerDNS:
+    Type: String
+
+Resources:
+
+  NetworkInterface1:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref Subnet1
+      GroupSet:
+       - !Ref SecurityGroup
+      Tags:
+        - Key: network-interface-manager-pool
+          Value: !Sub ${Environment}
+
+  NetworkInterface2:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref Subnet2
+      GroupSet:
+       - !Ref SecurityGroup
+      Tags:
+        - Key: network-interface-manager-pool
+          Value: !Sub ${Environment}
+
+  NetworkInterface3:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref Subnet3
+      GroupSet:
+       - !Ref SecurityGroup
+      Tags:
+        - Key: network-interface-manager-pool
+          Value: !Sub ${Environment}
+
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      IamInstanceProfile: !GetAtt [InstanceProfile,Arn]
+      InstanceMonitoring: false
+      ImageId: !Ref AMIId
+      InstanceType: t3a.nano
+      KeyName: !Ref EC2KeyPair
+      # LaunchConfigurationName:
+      SecurityGroups:
+        - !Ref SecurityGroup
+      UserData:
+        Fn::Base64:
+          !Sub
+          - |
+            #!/bin/bash -ex
+            yum install -y gcc gcc-c++ git openssl-devel libuuid-devel jq
+
+            git clone https://github.com/hui6075/mosquitto-cluster.git
+            cd mosquitto-cluster && make binary && make install -i
+            touch /etc/mosquitto/passwd
+            mosquitto_passwd -b /etc/mosquitto/passwd iot iot@2020
+            cat > /etc/mosquitto/mosquitto.conf << EOF
+            allow_anonymous false
+            password_file /etc/mosquitto/passwd
+            user ec2-user
+
+            node_name node-1
+            node_address ${NetworkInterfaceIP1}:1883
+            node_remote_username iot
+            node_remote_password iot@2020
+
+            node_name node-2
+            node_address ${NetworkInterfaceIP2}:1883
+            node_remote_username iot
+            node_remote_password iot@2020
+
+            node_name node-3
+            node_address ${NetworkInterfaceIP3}:1883
+            node_remote_username iot
+            node_remote_password iot@2020
+            EOF
+            cat > /etc/systemd/system/mosquitto.service << EOF
+            [Unit]
+            After=network.target
+            Description=Mosquitto API systemd service.
+
+            [Service]
+            Type=simple
+            Restart=always
+            WorkingDirectory=/etc/mosquitto
+            User=ec2-user
+            # ExecStartPre=
+            ExecStart=/usr/local/sbin/mosquitto -c /etc/mosquitto/mosquitto.conf
+            # StandardOutput=syslog
+            # StandardError=syslog
+            # SyslogIdentifier=mosquitto-api
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            systemctl daemon-reload
+            systemctl start mosquitto.service
+
+            # processo para associar ao Elastic Interface
+            AZ=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
+            NETWORK_INTERFACE=`aws --region ${AWS::Region} ec2 describe-network-interfaces --filter Name=tag:network-interface-manager-pool,Values=${Environment} Name=availability-zone,Values=$AZ| jq .NetworkInterfaces[0]`
+            NETWORK_STATUS=`echo $NETWORK_INTERFACE | jq -r .Status`
+
+            if [[ $NETWORK_STATUS == "in-use" ]]; then
+              attachment_id=`echo $NETWORK_INTERFACE | jq -r .Attachment.AttachmentId`
+              aws --region ${AWS::Region} ec2 detach-network-interface --attachment-id $attachment_id
+              sleep 10
+            fi
+            INTERFACE_ID=`echo $NETWORK_INTERFACE | jq -r .NetworkInterfaceId`
+            aws --region ${AWS::Region} ec2 attach-network-interface --instance-id `curl -s http://169.254.169.254/latest/meta-data/instance-id` --network-interface-id $INTERFACE_ID --device-index 1
+
+          - NetworkInterfaceIP1: !GetAtt [NetworkInterface1,PrimaryPrivateIpAddress]
+            NetworkInterfaceIP2: !GetAtt [NetworkInterface2,PrimaryPrivateIpAddress]
+            NetworkInterfaceIP3: !GetAtt [NetworkInterface3,PrimaryPrivateIpAddress]
+
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        -   Key: load_balancing.cross_zone.enabled
+            Value: true
+      Scheme: internet-facing
+      Subnets:
+        - !Ref Subnet1
+        - !Ref Subnet2
+        - !Ref Subnet3
+      Type: network
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      # HealthCheckEnabled: true
+      # HealthCheckIntervalSeconds: 10
+      # HealthCheckTimeoutSeconds: 6
+      # HealthyThresholdCount: 5
+      # UnhealthyThresholdCount: 2
+      Port: 1883
+      Protocol: TCP
+      VpcId: !Ref PubPrivateVPC
+      TargetType: instance
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 30
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: 1883
+      Protocol: TCP
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: EC2NetoworkInterface
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:AttachNetworkInterface
+                  - ec2:DescribeNetworkInterfaceAttribute
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DetachNetworkInterface
+                Resource: '*'
+      RoleName: !Sub ${Environment}
+
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Sub ${Environment}
+      Path: /
+      Roles:
+        - !Ref Role
+
+  # NLBSecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     GroupName: !Sub ${Environment}-nlb
+  #     GroupDescription: !Sub ${Environment}
+  #     VpcId: !Ref PubPrivateVPC
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${Environment}
+      GroupDescription: !Sub ${Environment}
+      VpcId: !Ref PubPrivateVPC
+
+  SecurityGroupIngressMqttTmp:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 1883
+      ToPort: 1883
+      CidrIp: 0.0.0.0/0
+
+  SecurityGroupIngressSSH:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: 0.0.0.0/0
+
+  SecurityGroupIngressMqtt:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 1883
+      ToPort: 1883
+      SourceSecurityGroupId: !Ref SecurityGroup
+
+  # NLBSecurityGroupIngressMqtt:
+  #   Type: AWS::EC2::SecurityGroupIngress
+  #   Properties:
+  #     GroupId: !Ref SecurityGroup
+  #     IpProtocol: tcp
+  #     FromPort: 1883
+  #     ToPort: 1883
+  #     SourceSecurityGroupId: !Ref NLBSecurityGroup
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+    Properties:
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 300
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      TargetGroupARNs:
+         - !Ref TargetGroup
+      DesiredCapacity: 3
+      MinSize: 3
+      MaxSize: 9
+      VPCZoneIdentifier:
+        - !Ref Subnet1
+        - !Ref Subnet2
+        - !Ref Subnet3
+      Cooldown: 300
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-instance
+          PropagateAtLaunch: true
+        - Key: network-interface-manager-pool
+          Value: !Sub ${Environment}
+          PropagateAtLaunch: true
+      # AutoScalingGroupName: !Sub ${Environment}-asg
+
+  RecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+          DNSName: !GetAtt [NetworkLoadBalancer,DNSName]
+          EvaluateTargetHealth: false
+          HostedZoneId: !GetAtt [NetworkLoadBalancer,CanonicalHostedZoneID]
+      HostedZoneId : !Ref HostedZoneId
+      Name: !Ref BrokerDNS
+      Type: A
+
+Outputs:
+
+  SecurityGroup:
+    Description: Security Group
+    Value: !Ref SecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-SecurityGroup
