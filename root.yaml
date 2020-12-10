@@ -23,7 +23,7 @@ Metadata:
       Parameters:
         - Environment
         - EC2KeyPair
-        - Scenario
+        # - Scenario
         - DatabaseName
         - DatabaseUser
 
@@ -60,13 +60,13 @@ Parameters:
       - No
     Default: Yes
 
-  Scenario:
-    Type: String
-    Description: Chose each scenario do you want do build
-    AllowedValues:
-      - Publisher
-      - Subscriber
-    ConstraintDescription: You must specify one option
+  # Scenario:
+  #   Type: String
+  #   Description: Chose each scenario do you want do build
+  #   AllowedValues:
+  #     - Publisher
+  #     - Subscriber
+  #   ConstraintDescription: You must specify one option
 
   DatabaseName:
     Description: Database name
@@ -90,9 +90,9 @@ Conditions:
 
   Private: !Equals [!Ref PrivateSubnetes, 'Yes']
 
-  Publisher: !Equals [!Ref Scenario, 'Publisher']
+  # Publisher: !Equals [!Ref Scenario, 'Publisher']
 
-  Subscriber: !Equals [!Ref Scenario, 'Subscriber']
+  # Subscriber: !Equals [!Ref Scenario, 'Subscriber']
 
 Resources:
 
@@ -109,7 +109,7 @@ Resources:
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/network.yaml
 
   PublisherAutoScaling:
-    Condition: Publisher
+    # Condition: Publisher
     Type: AWS::CloudFormation::Stack
     Properties:
       Parameters:
@@ -123,23 +123,24 @@ Resources:
         BrokerDomain: !Sub broker.${Domain}
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/publisher.yaml
 
-  # SubscriberAutoScaling:
-  #   Condition: Subscriber
-  #   Type: AWS::CloudFormation::Stack
-  #   Properties:
-  #     Parameters:
-  #       Environment: !Sub ${Environment}-subscriber
-  #       Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
-  #       Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
-  #       Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
-  #       EC2KeyPair: !Ref EC2KeyPair
-  #       PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
-  #       AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-  #     TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/subscriber.yaml
+  SubscriberAutoScaling:
+    # Condition: Subscriber
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        Environment: !Sub ${Environment}-subscriber
+        Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
+        Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
+        Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+        EC2KeyPair: !Ref EC2KeyPair
+        PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
+        AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+        BrokerDomain: !Sub broker.${Domain}
+      TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/subscriber.yaml
 
 
   BrokerAutoScaling:
-    Condition: Subscriber
+    # Condition: Subscriber
     Type: AWS::CloudFormation::Stack
     Properties:
       Parameters:

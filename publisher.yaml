@@ -40,13 +40,13 @@ Resources:
             #!/bin/bash -ex
             amazon-linux-extras install python3.8 -y
             yum install git -y
-            git clone https://github.com/leandromoreeira/mqtt-publisher.git /home/ec2-user/mqtt-publisher
-            pip3.8 install -r /home/ec2-user/mqtt-publisher/requirements.txt
+            git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
+            pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
             export BROKER_HOST=${BrokerDomain}
             export BROKER_PORT=1883
             export BROKER_USER=iot
             export BROKER_PASSWORD=iot@2020
-            python3.8 /home/ec2-user/mqtt-publisher/index.py -t uel/dc/sensors -s publisher
+            python3.8 /home/ec2-user/mqtt-client/index.py -t uel/dc/sensors -s publisher
             shutdown -h now
 
   Role:

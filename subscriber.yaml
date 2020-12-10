@@ -29,7 +29,7 @@ Resources:
       ImageId: !Ref AMIId
       InstanceType: t3a.nano
       KeyName: !Ref EC2KeyPair
-      LaunchConfigurationName: !Sub ${Environment}-lc
+      # LaunchConfigurationName: !Sub ${Environmxent}-lc
       SecurityGroups:
         - !Ref SecurityGroup
       UserData:
@@ -40,7 +40,12 @@ Resources:
             yum install git -y
             git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
             pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
-            python3.8 /home/ec2-user/mqtt-client/index.py
+            export BROKER_HOST=${BrokerDomain}
+            export BROKER_PORT=1883
+            export BROKER_USER=iot
+            export BROKER_PASSWORD=iot@2020
+            python3.8 /home/ec2-user/mqtt-client/index.py -t uel/dc/sensors -s subscriber
+            shutdown -h now
 
   Role:
     Type: AWS::IAM::Role
@@ -89,13 +94,16 @@ Resources:
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
     Properties:
       HealthCheckType: EC2
       HealthCheckGracePeriod: 300
       LaunchConfigurationName: !Ref LaunchConfiguration
-      DesiredCapacity: 1
-      MinSize: 1
-      MaxSize: 1
+      DesiredCapacity: 3
+      MinSize: 3
+      MaxSize: 9
       VPCZoneIdentifier:
         - !Ref Subnet1
         - !Ref Subnet2
@@ -105,7 +113,7 @@ Resources:
         - Key: Name
           Value: !Sub ${Environment}-instance
           PropagateAtLaunch: true
-      AutoScalingGroupName: !Sub ${Environment}-asg
+      # AutoScalingGroupName: !Sub ${Environment}-asg
 
 Outputs:
 
