@@ -20,7 +20,7 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
   HostedZoneId:
     Type: String
-  BrokerDNS:
+  BrokerDomain:
     Type: String
 
 Resources:
@@ -297,7 +297,7 @@ Resources:
           EvaluateTargetHealth: false
           HostedZoneId: !GetAtt [NetworkLoadBalancer,CanonicalHostedZoneID]
       HostedZoneId : !Ref HostedZoneId
-      Name: !Ref BrokerDNS
+      Name: !Ref BrokerDomain
       Type: A
 
 Outputs:

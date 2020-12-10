@@ -46,6 +46,7 @@ Resources:
             export BROKER_PORT=1883
             export BROKER_USER=iot
             export BROKER_PASSWORD=iot@2020
+            export DYNAMO_TABLE=${Environment}
             python3.8 /home/ec2-user/mqtt-client/index.py -t uel/dc/sensors -s publisher
             shutdown -h now
 
@@ -116,6 +117,20 @@ Resources:
           Value: !Sub ${Environment}-instance
           PropagateAtLaunch: true
       # AutoScalingGroupName: !Sub ${Environment}-asg
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TableName: !Sub ${Environment}
+
 
 Outputs:
 
