@@ -23,32 +23,35 @@ Parameters:
 
 Resources:
 
-  LaunchConfiguration:
-    Type: AWS::AutoScaling::LaunchConfiguration
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      IamInstanceProfile: !GetAtt [InstanceProfile,Arn]
-      InstanceMonitoring: false
-      ImageId: !Ref AMIId
-      InstanceType: t3a.nano
-      KeyName: !Ref EC2KeyPair
-      # LaunchConfigurationName:
-      SecurityGroups:
-        - !Ref SecurityGroup
-      UserData:
-        Fn::Base64:
-          !Sub |
-            #!/bin/bash -ex
-            amazon-linux-extras install python3.8 -y
-            yum install git -y
-            git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
-            pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
-            export BROKER_HOST=${BrokerDomain}
-            export BROKER_PORT=1883
-            export BROKER_USER=iot
-            export BROKER_PASSWORD=iot@2020
-            export DYNAMO_TABLE=${Environment}
-            python3.8 /home/ec2-user/mqtt-client/index.py -t uel/dc/sensors -s publisher
-            shutdown -h now
+      LaunchTemplateData:
+          IamInstanceProfile:
+            Arn: !GetAtt [InstanceProfile,Arn]
+          ImageId: !Ref AMIId
+          InstanceType: t3a.nano
+          KeyName: !Ref EC2KeyPair
+          SecurityGroupIds:
+            - !Ref SecurityGroup
+          UserData:
+            Fn::Base64:
+              !Sub |
+                #!/bin/bash -ex
+                export AWS_DEFAULT_REGION=${AWS::Region}
+
+                amazon-linux-extras install python3.8 -y
+                yum install git jq -y
+                git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
+                pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
+
+                INSTANCE_ID=`curl -s http://169.254.169.254/latest/meta-data/instance-id`
+                DESCRIBE_INSTANCE=`aws ec2 describe-instances --instance-ids $INSTANCE_ID`
+                MESSAGES=`echo $DESCRIBE_INSTANCE | jq -r '.Reservations[0].Instances[0].Tags[] | select(.Key == "messages" ) | .Value'`
+                SECONDS=`echo $DESCRIBE_INSTANCE | jq -r '.Reservations[0].Instances[0].Tags[] | select(.Key == "seconds" ) | .Value'`
+                python3.8 /home/ec2-user/mqtt-client/publisher.py -t uel/dc/sensors -b ${BrokerDomain} -u iot -p iot@2020 -d ${DynamoDBTable} -m $MESSAGES -s $SECONDS
+                aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+      LaunchTemplateName: !Sub ${Environment}
 
   Role:
     Type: AWS::IAM::Role
@@ -63,15 +66,24 @@ Resources:
             Action:
               - 'sts:AssumeRole'
       Path: /
-      # Policies:
-      #   - PolicyName: EC2AssociateAddress
-      #     PolicyDocument:
-      #       Version: 2012-10-17
-      #       Statement:
-      #         - Effect: Allow
-      #           Action:
-      #             - 's3:*'
-      #           Resource: '*'
+      Policies:
+        - PolicyName: DynamoDB
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:PutItem'
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTable}
+        - PolicyName: Ec2Permissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:TerminateInstances'
+                Resource: '*'
       RoleName: !Sub ${Environment}
 
   InstanceProfile:
@@ -94,29 +106,6 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
-
-  AutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    UpdatePolicy:
-      AutoScalingReplacingUpdate:
-        WillReplace: 'true'
-    Properties:
-      HealthCheckType: EC2
-      HealthCheckGracePeriod: 300
-      LaunchConfigurationName: !Ref LaunchConfiguration
-      DesiredCapacity: 3
-      MinSize: 3
-      MaxSize: 9
-      VPCZoneIdentifier:
-        - !Ref Subnet1
-        - !Ref Subnet2
-        - !Ref Subnet3
-      Cooldown: 300
-      Tags:
-        - Key: Name
-          Value: !Sub ${Environment}-instance
-          PropagateAtLaunch: true
-      # AutoScalingGroupName: !Sub ${Environment}-asg
 
   DynamoDBTable:
     Type: AWS::DynamoDB::Table

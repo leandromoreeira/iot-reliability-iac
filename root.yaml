@@ -24,8 +24,8 @@ Metadata:
         - Environment
         - EC2KeyPair
         # - Scenario
-        - DatabaseName
-        - DatabaseUser
+        # - DatabaseName
+        # - DatabaseUser
 
 Parameters:
 
@@ -68,15 +68,15 @@ Parameters:
   #     - Subscriber
   #   ConstraintDescription: You must specify one option
 
-  DatabaseName:
-    Description: Database name
-    Default: iot
-    Type: String
+  # DatabaseName:
+  #   Description: Database name
+  #   Default: iot
+  #   Type: String
 
-  DatabaseUser:
-    Description: Database username
-    Default: postgres
-    Type: String
+  # DatabaseUser:
+  #   Description: Database username
+  #   Default: postgres
+  #   Type: String
 
   HostedZoneId:
     Description: Informar o Hosted Zone ID do domínio no Route 53
