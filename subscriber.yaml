@@ -131,15 +131,15 @@ Resources:
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
-        - AttributeName: s_timestamp
-          AttributeType: S
+        - AttributeName: s_time
+          AttributeType: N
       BillingMode: PAY_PER_REQUEST
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-        - AttributeName: s_timestamp
+        - AttributeName: s_time
           KeyType: RANGE
-      TableName: !Sub ${Environment}
+      # TableName: !Sub ${Environment}
 
 Outputs:
 
