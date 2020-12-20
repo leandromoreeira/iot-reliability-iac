@@ -32,6 +32,8 @@ Resources:
           ImageId: !Ref AMIId
           InstanceType: t3a.nano
           KeyName: !Ref EC2KeyPair
+          Monitoring:
+            Enabled: true
           SecurityGroupIds:
             - !Ref SecurityGroup
           UserData:
@@ -114,14 +116,10 @@ Resources:
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
-        - AttributeName: p_time
-          AttributeType: N
       BillingMode: PAY_PER_REQUEST
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-        - AttributeName: p_time
-          KeyType: RANGE
       # TableName: !Sub ${Environment}
 
 

@@ -59,7 +59,7 @@ Resources:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       IamInstanceProfile: !GetAtt [InstanceProfile,Arn]
-      InstanceMonitoring: false
+      InstanceMonitoring: true
       ImageId: !Ref AMIId
       InstanceType: t3a.nano
       KeyName: !Ref EC2KeyPair
@@ -270,6 +270,8 @@ Resources:
       HealthCheckType: ELB
       HealthCheckGracePeriod: 300
       LaunchConfigurationName: !Ref LaunchConfiguration
+      MetricsCollection:
+        - Granularity: 1Minute
       TargetGroupARNs:
          - !Ref TargetGroup
       DesiredCapacity: 3
@@ -286,6 +288,9 @@ Resources:
           PropagateAtLaunch: true
         - Key: network-interface-manager-pool
           Value: !Sub ${Environment}
+          PropagateAtLaunch: true
+        - Key: chaos
+          Value: 'yes'
           PropagateAtLaunch: true
       # AutoScalingGroupName: !Sub ${Environment}-asg
 

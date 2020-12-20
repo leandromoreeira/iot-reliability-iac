@@ -27,7 +27,7 @@ Resources:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       IamInstanceProfile: !GetAtt [InstanceProfile,Arn]
-      InstanceMonitoring: false
+      InstanceMonitoring: true
       ImageId: !Ref AMIId
       InstanceType: t3a.nano
       KeyName: !Ref EC2KeyPair
@@ -118,9 +118,14 @@ Resources:
         - !Ref Subnet2
         - !Ref Subnet3
       Cooldown: 300
+      MetricsCollection:
+        -  Granularity: 1Minute
       Tags:
         - Key: Name
           Value: !Sub ${Environment}-instance
+          PropagateAtLaunch: true
+        - Key: chaos
+          Value: 'yes'
           PropagateAtLaunch: true
       # AutoScalingGroupName: !Sub ${Environment}-asg
 
@@ -131,14 +136,10 @@ Resources:
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
-        - AttributeName: s_time
-          AttributeType: N
       BillingMode: PAY_PER_REQUEST
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-        - AttributeName: s_time
-          KeyType: RANGE
       # TableName: !Sub ${Environment}
 
 Outputs:
