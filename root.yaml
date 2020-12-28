@@ -23,9 +23,6 @@ Metadata:
       Parameters:
         - Environment
         - EC2KeyPair
-        # - Scenario
-        # - DatabaseName
-        # - DatabaseUser
 
 Parameters:
 
@@ -58,25 +55,7 @@ Parameters:
     AllowedValues:
       - Yes
       - No
-    Default: Yes
-
-  # Scenario:
-  #   Type: String
-  #   Description: Chose each scenario do you want do build
-  #   AllowedValues:
-  #     - Publisher
-  #     - Subscriber
-  #   ConstraintDescription: You must specify one option
-
-  # DatabaseName:
-  #   Description: Database name
-  #   Default: iot
-  #   Type: String
-
-  # DatabaseUser:
-  #   Description: Database username
-  #   Default: postgres
-  #   Type: String
+    Default: No
 
   HostedZoneId:
     Description: Informar o Hosted Zone ID do domínio no Route 53
@@ -89,10 +68,6 @@ Parameters:
 Conditions:
 
   Private: !Equals [!Ref PrivateSubnetes, 'Yes']
-
-  # Publisher: !Equals [!Ref Scenario, 'Publisher']
-
-  # Subscriber: !Equals [!Ref Scenario, 'Subscriber']
 
 Resources:
 
@@ -109,7 +84,6 @@ Resources:
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/network.yaml
 
   PublisherAutoScaling:
-    # Condition: Publisher
     Type: AWS::CloudFormation::Stack
     Properties:
       Parameters:
@@ -124,7 +98,6 @@ Resources:
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/publisher.yaml
 
   SubscriberAutoScaling:
-    # Condition: Subscriber
     Type: AWS::CloudFormation::Stack
     Properties:
       Parameters:
@@ -140,7 +113,6 @@ Resources:
 
 
   BrokerAutoScaling:
-    # Condition: Subscriber
     Type: AWS::CloudFormation::Stack
     Properties:
       Parameters:
@@ -154,7 +126,3 @@ Resources:
         HostedZoneId: !Ref HostedZoneId
         BrokerDomain: !Sub broker.${Domain}
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/broker.yaml
-
-# Outputs:
-
-
