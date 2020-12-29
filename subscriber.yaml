@@ -41,7 +41,7 @@ Resources:
             export AWS_DEFAULT_REGION=${AWS::Region}
 
             amazon-linux-extras install python3.8 -y
-            yum install git -y
+            yum install git jq stress-ng tc htop -y
             git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
             pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
             python3.8 /home/ec2-user/mqtt-client/subscriber.py -t uel/dc/sensors -b ${BrokerDomain} -u iot -p iot@2020 -d ${DynamoDBTable}
@@ -60,6 +60,8 @@ Resources:
             Action:
               - 'sts:AssumeRole'
       Path: /
+      ManagedPolicyArns:
+       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
         - PolicyName: DynamoDB
           PolicyDocument:

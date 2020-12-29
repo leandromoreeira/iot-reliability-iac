@@ -43,7 +43,7 @@ Resources:
                 export AWS_DEFAULT_REGION=${AWS::Region}
 
                 amazon-linux-extras install python3.8 -y
-                yum install git jq -y
+                yum install git jq stress-ng tc htop -y
                 git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
                 pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
 
@@ -53,7 +53,7 @@ Resources:
                 SECONDS=`echo $DESCRIBE_INSTANCE | jq -r '.Reservations[0].Instances[0].Tags[] | select(.Key == "seconds" ) | .Value'`
                 python3.8 /home/ec2-user/mqtt-client/publisher.py -t uel/dc/sensors -b ${BrokerDomain} -u iot -p iot@2020 -d ${DynamoDBTable} -m $MESSAGES -s $SECONDS
                 aws ec2 terminate-instances --instance-ids $INSTANCE_ID
-      LaunchTemplateName: !Sub ${Environment}
+      # LaunchTemplateName: !Sub ${Environment}
 
   Role:
     Type: AWS::IAM::Role
@@ -68,6 +68,8 @@ Resources:
             Action:
               - 'sts:AssumeRole'
       Path: /
+      ManagedPolicyArns:
+       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
         - PolicyName: DynamoDB
           PolicyDocument:

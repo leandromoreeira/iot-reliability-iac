@@ -71,7 +71,7 @@ Resources:
           !Sub
           - |
             #!/bin/bash -ex
-            yum install -y gcc gcc-c++ git openssl-devel libuuid-devel jq
+            yum install -y gcc gcc-c++ git openssl-devel libuuid-devel jq stress-ng tc htop
 
             git clone https://github.com/hui6075/mosquitto-cluster.git
             cd mosquitto-cluster && make binary && make install -i
@@ -189,6 +189,8 @@ Resources:
             Action:
               - 'sts:AssumeRole'
       Path: /
+      ManagedPolicyArns:
+       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
         - PolicyName: EC2NetoworkInterface
           PolicyDocument:
