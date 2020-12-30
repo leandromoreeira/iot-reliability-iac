@@ -154,7 +154,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       # HealthCheckEnabled: true
-      # HealthCheckIntervalSeconds: 10
+      HealthCheckIntervalSeconds: 10
       # HealthCheckTimeoutSeconds: 6
       # HealthyThresholdCount: 5
       # UnhealthyThresholdCount: 2
@@ -164,7 +164,9 @@ Resources:
       TargetType: instance
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
-          Value: 30
+          Value: 10
+        - Key: deregistration_delay.connection_termination.enabled
+          Value: true
 
   Listener:
     Type: AWS::ElasticLoadBalancingV2::Listener
