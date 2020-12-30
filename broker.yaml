@@ -316,3 +316,6 @@ Outputs:
     Value: !Ref SecurityGroup
     Export:
       Name: !Sub ${AWS::StackName}-SecurityGroup
+
+  LoadBalancerDNSName:
+    Value: !GetAtt [NetworkLoadBalancer,DNSName]
