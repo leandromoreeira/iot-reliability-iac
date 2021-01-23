@@ -14,9 +14,6 @@ Metadata:
       Parameters:
         - AvailabilityZone
         - CIDR
-        - PrivateSubnetes
-        - HostedZoneId
-        - Domain
     -
       Label:
         default: "Environment Definition"
@@ -49,25 +46,13 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Keypair needed to access the ec2 instances
 
-  PrivateSubnetes:
+  ChaosReady:
     Type: String
-    Description: Do you want to create private subnetes with NAT Gateways? (May cost apply)
+    Description: Essa infraestrutura será aplicado a engenharia do caos?
     AllowedValues:
       - Yes
       - No
     Default: No
-
-  HostedZoneId:
-    Description: Informar o Hosted Zone ID do domínio no Route 53
-    Type: String
-
-  Domain:
-    Description: Informar o Domínio que será utilizado para criar os recursos
-    Type: String
-
-Conditions:
-
-  Private: !Equals [!Ref PrivateSubnetes, 'Yes']
 
 Resources:
 
@@ -80,35 +65,36 @@ Resources:
         AZ3: !Select [2, !Ref AvailabilityZone]
         CIDR: !Ref CIDR
         Environment: !Ref Environment
-        PrivateSubnetes: !Ref PrivateSubnetes
+        PrivateSubnetes: No
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/network.yaml
 
-  PublisherAutoScaling:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      Parameters:
-        Environment: !Sub ${Environment}-publisher
-        Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
-        Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
-        Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
-        EC2KeyPair: !Ref EC2KeyPair
-        PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
-        AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-        BrokerDomain: !GetAtt [BrokerAutoScaling,Outputs.LoadBalancerDNSName]
-      TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/publisher.yaml
+  # PublisherAutoScaling:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     Parameters:
+  #       Environment: !Sub ${Environment}-publisher
+  #       Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
+  #       Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
+  #       Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+  #       EC2KeyPair: !Ref EC2KeyPair
+  #       PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
+  #       AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  #       BrokerDomain: !GetAtt [BrokerAutoScaling,Outputs.LoadBalancerDNSName]
+  #     TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/publisher.yaml
 
   SubscriberAutoScaling:
     Type: AWS::CloudFormation::Stack
     Properties:
       Parameters:
         Environment: !Sub ${Environment}-subscriber
-        Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
-        Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
-        Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+        Subnet1: !GetAtt [NetworkStack,Outputs.PublicSubnet1]
+        Subnet2: !GetAtt [NetworkStack,Outputs.PublicSubnet2]
+        Subnet3: !GetAtt [NetworkStack,Outputs.PublicSubnet3]
         EC2KeyPair: !Ref EC2KeyPair
         PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
         AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
         BrokerDomain: !GetAtt [BrokerAutoScaling,Outputs.LoadBalancerDNSName]
+        ChaosReady: !Ref ChaosReady
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/subscriber.yaml
 
 
@@ -117,12 +103,16 @@ Resources:
     Properties:
       Parameters:
         Environment: !Sub ${Environment}-broker
-        Subnet1: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet1], !GetAtt [NetworkStack,Outputs.PublicSubnet1] ]
-        Subnet2: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet2], !GetAtt [NetworkStack,Outputs.PublicSubnet2] ]
-        Subnet3: !If [ Private, !GetAtt [NetworkStack,Outputs.PrivateSubnet3], !GetAtt [NetworkStack,Outputs.PublicSubnet3] ]
+        Subnet1: !GetAtt [NetworkStack,Outputs.PublicSubnet1]
+        Subnet2: !GetAtt [NetworkStack,Outputs.PublicSubnet2]
+        Subnet3: !GetAtt [NetworkStack,Outputs.PublicSubnet3]
         EC2KeyPair: !Ref EC2KeyPair
         PubPrivateVPC: !GetAtt [NetworkStack,Outputs.PubPrivateVPC]
         AMIId: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-        HostedZoneId: !Ref HostedZoneId
-        BrokerDomain: !Sub broker.${Domain}
+        ChaosReady: !Ref ChaosReady
       TemplateURL: !Sub https://${BucketSourceName}.s3.amazonaws.com/broker.yaml
+
+Outputs:
+
+  BrokerDNSName:
+    Value: !GetAtt [BrokerAutoScaling, Outputs.LoadBalancerDNSName]

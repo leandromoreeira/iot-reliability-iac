@@ -18,8 +18,14 @@ Parameters:
     Type: String
   AMIId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-  BrokerDomain:
+
+  BrokerChaos:
     Type: String
+    Description: Endereço DNS do broker que será aplicado o chaos
+
+  BrokerControle:
+    Type: String
+    Description: Endereço DNS do broker que será feito o controle
 
 Resources:
 
@@ -42,7 +48,7 @@ Resources:
                 #!/bin/bash -ex
                 export AWS_DEFAULT_REGION=${AWS::Region}
 
-                amazon-linux-extras install python3.8 -y
+                amazon-linux-extras install python3.8 testing -y
                 yum install git jq stress-ng tc htop -y
                 git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
                 pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
@@ -51,7 +57,8 @@ Resources:
                 DESCRIBE_INSTANCE=`aws ec2 describe-instances --instance-ids $INSTANCE_ID`
                 MESSAGES=`echo $DESCRIBE_INSTANCE | jq -r '.Reservations[0].Instances[0].Tags[] | select(.Key == "messages" ) | .Value'`
                 SECONDS=`echo $DESCRIBE_INSTANCE | jq -r '.Reservations[0].Instances[0].Tags[] | select(.Key == "seconds" ) | .Value'`
-                python3.8 /home/ec2-user/mqtt-client/publisher.py -t uel/dc/sensors -b ${BrokerDomain} -u iot -p iot@2020 -d ${DynamoDBTable} -m $MESSAGES -s $SECONDS
+                python3.8 /home/ec2-user/mqtt-client/publisher.py -t uel/dc/sensors -b ${BrokerChaos} -u iot -p iot@2020 -d ${DynamoDBTableChaos} -m $MESSAGES -s $SECONDS &
+                python3.8 /home/ec2-user/mqtt-client/publisher.py -t uel/dc/sensors -b ${BrokerControle} -u iot -p iot@2020 -d ${DynamoDBTableControl} -m $MESSAGES -s $SECONDS
                 aws ec2 terminate-instances --instance-ids $INSTANCE_ID
       # LaunchTemplateName: !Sub ${Environment}
 
@@ -78,7 +85,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - 'dynamodb:PutItem'
-                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTable}
+                Resource:
+                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableChaos}
+                 - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableControl}
         - PolicyName: Ec2Permissions
           PolicyDocument:
             Version: 2012-10-17
@@ -111,7 +120,7 @@ Resources:
           ToPort: 22
           CidrIp: 0.0.0.0/0
 
-  DynamoDBTable:
+  DynamoDBTableChaos:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Delete
     Properties:
@@ -122,8 +131,20 @@ Resources:
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-      # TableName: !Sub ${Environment}
+      TableName: !Sub ${Environment}-chaos
 
+  DynamoDBTableControl:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      TableName: !Sub ${Environment}-control
 
 Outputs:
 
@@ -132,3 +153,6 @@ Outputs:
     Value: !Ref SecurityGroup
     Export:
       Name: !Sub ${AWS::StackName}-SecurityGroup
+
+  LaunchTemplate:
+    Value: !Ref LaunchTemplate

@@ -21,6 +21,17 @@ Parameters:
   BrokerDomain:
     Type: String
 
+  ChaosReady:
+    Type: String
+    Description: Essa infraestrutura será aplicado a engenharia do caos?
+    AllowedValues:
+      - Yes
+      - No
+    Default: No
+
+Conditions:
+  Chaos: !Equals [!Ref ChaosReady, 'true']
+
 Resources:
 
   LaunchConfiguration:
@@ -45,7 +56,7 @@ Resources:
             git clone https://github.com/leandromoreeira/mqtt-client.git /home/ec2-user/mqtt-client
             pip3.8 install -r /home/ec2-user/mqtt-client/requirements.txt
             python3.8 /home/ec2-user/mqtt-client/subscriber.py -t uel/dc/sensors -b ${BrokerDomain} -u iot -p iot@2020 -d ${DynamoDBTable}
-            aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+            aws ec2 terminate-instances --instance-ids `curl -s http://169.254.169.254/latest/meta-data/instance-id`
 
   Role:
     Type: AWS::IAM::Role
@@ -126,8 +137,8 @@ Resources:
         - Key: Name
           Value: !Sub ${Environment}-instance
           PropagateAtLaunch: true
-        - Key: chaos
-          Value: 'yes'
+        - Key: chaos-subscriber
+          Value: !If [Chaos, 'yes', 'no']
           PropagateAtLaunch: true
       # AutoScalingGroupName: !Sub ${Environment}-asg
 
@@ -142,7 +153,129 @@ Resources:
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-      # TableName: !Sub ${Environment}
+      TableName: !Sub ${Environment}
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardBody:
+        !Sub |
+          {
+              "widgets": [
+                  {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 0,
+                      "width": 12,
+                      "height": 9,
+                      "properties": {
+                          "metrics": [
+                              [ "AWS/AutoScaling", "GroupInServiceInstances", "AutoScalingGroupName", "${AutoScalingGroup}" ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "region": "${AWS::Region}",
+                          "stat": "Average",
+                          "period": 60,
+                          "title": "Total de Instâncias"
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 6,
+                      "y": 27,
+                      "width": 12,
+                      "height": 9,
+                      "properties": {
+                          "metrics": [
+                              [ "AWS/EC2", "CPUUtilization", "AutoScalingGroupName", "${AutoScalingGroup}" ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "region": "${AWS::Region}",
+                          "title": "Uso de CPU",
+                          "stat": "Average",
+                          "period": 60
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 18,
+                      "width": 12,
+                      "height": 9,
+                      "properties": {
+                          "metrics": [
+                              [ "AWS/AutoScaling", "GroupPendingInstances", "AutoScalingGroupName", "${AutoScalingGroup}" ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "region": "${AWS::Region}",
+                          "stat": "Average",
+                          "period": 60,
+                          "title": "Instâncias Terminadas"
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 9,
+                      "width": 12,
+                      "height": 9,
+                      "properties": {
+                          "view": "timeSeries",
+                          "stacked": true,
+                          "metrics": [
+                              [ "AWS/EC2", "NetworkIn", "AutoScalingGroupName", "${AutoScalingGroup}" ],
+                              [ ".", "NetworkOut", ".", "." ]
+                          ],
+                          "region": "${AWS::Region}",
+                          "title": "Uso de Rede (Entrada e Saída)",
+                          "period": 60,
+                          "stat": "Average"
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 12,
+                      "y": 9,
+                      "width": 12,
+                      "height": 9,
+                      "properties": {
+                          "metrics": [
+                              [ "AWS/EC2", "EBSReadOps", "AutoScalingGroupName", "${AutoScalingGroup}" ],
+                              [ ".", "EBSWriteOps", ".", "." ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": true,
+                          "region": "${AWS::Region}",
+                          "title": "Operações de Leitura e Escrita do Disco",
+                          "stat": "Average",
+                          "period": 60
+                      }
+                  },
+                  {
+                      "type": "metric",
+                      "x": 12,
+                      "y": 18,
+                      "width": 12,
+                      "height": 9,
+                      "properties": {
+                          "metrics": [
+                              [ "AWS/EC2", "CPUCreditBalance", "AutoScalingGroupName", "${AutoScalingGroup}" ],
+                              [ ".", "CPUCreditUsage", ".", "." ]
+                          ],
+                          "view": "timeSeries",
+                          "stacked": false,
+                          "region": "${AWS::Region}",
+                          "title": "Créditos de CPU",
+                          "stat": "Average",
+                          "period": 300
+                      }
+                  }
+              ]
+          }
+      DashboardName: !Ref Environment
 
 Outputs:
 

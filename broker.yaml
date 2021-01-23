@@ -18,10 +18,16 @@ Parameters:
     Type: String
   AMIId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-  HostedZoneId:
+  ChaosReady:
     Type: String
-  BrokerDomain:
-    Type: String
+    Description: Essa infraestrutura será aplicado a engenharia do caos?
+    AllowedValues:
+      - Yes
+      - No
+    Default: No
+
+Conditions:
+  Chaos: !Equals [!Ref ChaosReady, 'true']
 
 Resources:
 
@@ -71,6 +77,7 @@ Resources:
           !Sub
           - |
             #!/bin/bash -ex
+            amazon-linux-extras install testing -y
             yum install -y gcc gcc-c++ git openssl-devel libuuid-devel jq stress-ng tc htop
 
             git clone https://github.com/hui6075/mosquitto-cluster.git
@@ -140,9 +147,9 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       IpAddressType: ipv4
-      LoadBalancerAttributes:
-        -   Key: load_balancing.cross_zone.enabled
-            Value: true
+      # LoadBalancerAttributes:
+      #   -   Key: load_balancing.cross_zone.enabled
+      #       Value: true
       Scheme: internet-facing
       Subnets:
         - !Ref Subnet1
@@ -154,7 +161,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       # HealthCheckEnabled: true
-      HealthCheckIntervalSeconds: 10
+      # HealthCheckIntervalSeconds: 10
       # HealthCheckTimeoutSeconds: 6
       # HealthyThresholdCount: 5
       # UnhealthyThresholdCount: 2
@@ -293,21 +300,155 @@ Resources:
         - Key: network-interface-manager-pool
           Value: !Sub ${Environment}
           PropagateAtLaunch: true
-        - Key: chaos
-          Value: 'yes'
+        - Key: chaos-broker
+          Value: !If [Chaos, 'yes', 'no']
           PropagateAtLaunch: true
       # AutoScalingGroupName: !Sub ${Environment}-asg
 
-  RecordSet:
-    Type: AWS::Route53::RecordSet
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
     Properties:
-      AliasTarget:
-          DNSName: !GetAtt [NetworkLoadBalancer,DNSName]
-          EvaluateTargetHealth: false
-          HostedZoneId: !GetAtt [NetworkLoadBalancer,CanonicalHostedZoneID]
-      HostedZoneId : !Ref HostedZoneId
-      Name: !Ref BrokerDomain
-      Type: A
+      DashboardBody:
+        !Sub
+          - |
+            {
+                "widgets": [
+                    {
+                        "type": "metric",
+                        "x": 0,
+                        "y": 0,
+                        "width": 12,
+                        "height": 9,
+                        "properties": {
+                            "metrics": [
+                                [ "AWS/AutoScaling", "GroupInServiceInstances", "AutoScalingGroupName", "${AutoScalingGroup}" ]
+                            ],
+                            "view": "timeSeries",
+                            "stacked": false,
+                            "region": "${AWS::Region}",
+                            "stat": "Average",
+                            "period": 60,
+                            "title": "Total de Instâncias"
+                        }
+                    },
+                    {
+                        "type": "metric",
+                        "x": 6,
+                        "y": 27,
+                        "width": 12,
+                        "height": 9,
+                        "properties": {
+                            "metrics": [
+                                [ "AWS/EC2", "CPUUtilization", "AutoScalingGroupName", "${AutoScalingGroup}" ]
+                            ],
+                            "view": "timeSeries",
+                            "stacked": false,
+                            "region": "${AWS::Region}",
+                            "title": "Uso de CPU",
+                            "stat": "Average",
+                            "period": 60
+                        }
+                    },
+                    {
+                        "type": "metric",
+                        "x": 0,
+                        "y": 18,
+                        "width": 12,
+                        "height": 9,
+                        "properties": {
+                            "metrics": [
+                                [ "AWS/AutoScaling", "GroupPendingInstances", "AutoScalingGroupName", "${AutoScalingGroup}" ]
+                            ],
+                            "view": "timeSeries",
+                            "stacked": false,
+                            "region": "${AWS::Region}",
+                            "stat": "Average",
+                            "period": 60,
+                            "title": "Instâncias Terminadas"
+                        }
+                    },
+                    {
+                        "type": "metric",
+                        "x": 0,
+                        "y": 9,
+                        "width": 12,
+                        "height": 9,
+                        "properties": {
+                            "view": "timeSeries",
+                            "stacked": true,
+                            "metrics": [
+                                [ "AWS/EC2", "NetworkIn", "AutoScalingGroupName", "${AutoScalingGroup}" ],
+                                [ ".", "NetworkOut", ".", "." ]
+                            ],
+                            "region": "${AWS::Region}",
+                            "title": "Uso de Rede (Entrada e Saída)",
+                            "period": 60,
+                            "stat": "Average"
+                        }
+                    },
+                    {
+                        "type": "metric",
+                        "x": 12,
+                        "y": 9,
+                        "width": 12,
+                        "height": 9,
+                        "properties": {
+                            "metrics": [
+                                [ "AWS/EC2", "EBSReadOps", "AutoScalingGroupName", "${AutoScalingGroup}" ],
+                                [ ".", "EBSWriteOps", ".", "." ]
+                            ],
+                            "view": "timeSeries",
+                            "stacked": true,
+                            "region": "${AWS::Region}",
+                            "title": "Operações de Leitura e Escrita do Disco",
+                            "stat": "Average",
+                            "period": 60
+                        }
+                    },
+                    {
+                        "type": "metric",
+                        "x": 12,
+                        "y": 18,
+                        "width": 12,
+                        "height": 9,
+                        "properties": {
+                            "metrics": [
+                                [ "AWS/EC2", "CPUCreditBalance", "AutoScalingGroupName", "${AutoScalingGroup}" ],
+                                [ ".", "CPUCreditUsage", ".", "." ]
+                            ],
+                            "view": "timeSeries",
+                            "stacked": false,
+                            "region": "${AWS::Region}",
+                            "title": "Créditos de CPU",
+                            "stat": "Average",
+                            "period": 300
+                        }
+                    },
+                    {
+                        "type": "metric",
+                        "x": 12,
+                        "y": 0,
+                        "width": 12,
+                        "height": 9,
+                        "properties": {
+                            "metrics": [
+                                [ "AWS/NetworkELB", "UnHealthyHostCount", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${LoadBalancerFullName}" ],
+                                [ ".", "HealthyHostCount", ".", ".", ".", "." ]
+                            ],
+                            "view": "timeSeries",
+                            "stacked": false,
+                            "region": "${AWS::Region}",
+                            "title": "Saúde dos Alvos no Balanceador de Carga",
+                            "stat": "Sum",
+                            "period": 60
+                        }
+                    }
+                ]
+            }
+          - TargetGroupFullName: !GetAtt [TargetGroup, TargetGroupFullName]
+            LoadBalancerFullName: !GetAtt [NetworkLoadBalancer, LoadBalancerFullName]
+      DashboardName: !Ref Environment
+
 
 Outputs:
 
